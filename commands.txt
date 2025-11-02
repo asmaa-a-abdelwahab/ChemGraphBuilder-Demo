@@ -1,0 +1,56 @@
+$NEO4J_URI=
+$NEO4J_PASSWORD=$NEO4J_PASSWORD
+
+Measure-Command { setup-data-folder }
+
+Measure-Command { collect-process-nodes --node_type Compound --enzyme_list CYP20A1 --start_chunk 0 }
+
+Measure-Command { collect-process-nodes --node_type BioAssay --enzyme_list CYP20A1 --start_chunk 0 }
+
+Measure-Command { collect-process-nodes --node_type Gene --enzyme_list CYP20A1 --start_chunk 0 }
+
+Measure-Command { collect-process-nodes --node_type Protein --enzyme_list CYP20A1 --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Assay_Compound --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Assay_Gene --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Gene_Protein --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Compound_Gene --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Compound_Similarity --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Compound_Compound_Cooccurrence --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Compound_Gene_Cooccurrence --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Compound_Gene_Interaction --start_chunk 0 }
+
+Measure-Command { collect-process-relationships --relationship_type Compound_Transformation --start_chunk 0 }
+
+Measure-Command {load-graph-nodes --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --label Compound}
+
+Measure-Command {load-graph-nodes --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --label Compound}
+
+Measure-Command {load-graph-nodes --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --label BioAssay}
+
+Measure-Command {load-graph-nodes --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --label Protein}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Assay_Compound}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Assay_Gene}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Gene_Protein}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Compound_Gene}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Compound_Similarity}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Compound_Gene_Interaction}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Compound_Gene_CoOccurrence}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Compound_Compound_CoOccurrence}
+
+Measure-Command {load-graph-relationships --uri $NEO4J_URI --username neo4j --password $NEO4J_PASSWORD --relationship_type Compound_Transformation}
