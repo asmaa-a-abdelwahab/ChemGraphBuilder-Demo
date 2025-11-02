@@ -1,5 +1,5 @@
-streamlit==1.39.0
-neo4j==5.26.0
-pyvis==0.3.2
-streamlit-agraph==0.0.45
+streamlit
+neo4j
+pyvis
+streamlit-agraph
 ChemGraphBuilder

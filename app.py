@@ -1,4 +1,5 @@
 from __future__ import annotations
+import base64
 import json
 import os
 import shlex
@@ -18,7 +19,72 @@ from pathlib import Path
 import csv as csv_mod
 from io import StringIO
 import shutil
-from pathlib import Path
+import re
+
+# compile once
+_SECRET_FLAGS = {"--password", "--pass", "--pw", "--token", "--apikey", "--api-key", "--key", "--secret"}
+_ENV_SECRET_KEYS = re.compile(r"(PASS(WORD)?|TOKEN|API[_-]?KEY|SECRET)", re.I)
+
+# For URIs like neo4j+s://user:pass@host:7687 or schemes with credentials
+_URI_CRED_RE = re.compile(r"(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<user>[^:/@]+):(?P<pw>[^@]+)@")
+
+# --------------------------- Config helpers ---------------------------
+def _get_secret(key: str, default: str = "") -> str:
+    try:
+        return st.secrets.get(key, default)  # works even if key not present
+    except Exception:
+        return default
+
+def _parse_enzyme_list(s: str) -> list[str]:
+    # normalize: split comma/whitespace, uppercase, keep CYP-like tokens
+    toks = [t.strip().upper() for t in re.split(r"[,\s]+", s or "") if t.strip()]
+    # Very light validation; keep alnum/_/-
+    return [t for t in toks if re.fullmatch(r"[A-Z0-9_\-]+", t)]
+
+
+def _mask_uri(s: str) -> str:
+    return _URI_CRED_RE.sub(lambda m: f"{m.group('scheme')}***:***@", s)
+
+def _mask_equals_form(s: str) -> str:
+    # e.g. --password=abc  -> --password=***
+    return re.sub(r"(--(?:password|pass|pw|token|apikey|api-key|key|secret))\s*=\s*([^\s]+)",
+                  r"\1=***", s, flags=re.I)
+
+def redact_argv(argv: list[str]) -> str:
+    """Return a printable (masked) version of argv."""
+    masked: list[str] = []
+    it = iter(range(len(argv)))
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        a_masked = _mask_equals_form(_mask_uri(a))
+        if a.lower() in _SECRET_FLAGS:
+            masked.append(a)            # keep the flag
+            if i + 1 < len(argv):
+                masked.append("***")    # hide the next token
+                i += 2
+                continue
+        masked.append(a_masked)
+        i += 1
+    return " ".join(shlex.quote(x) for x in masked)
+
+def redact_text(s: str) -> str:
+    """General redactor for any line of text."""
+    s = _mask_uri(s)
+    s = _mask_equals_form(s)
+    # also mask query-style ...password=... in arbitrary text
+    s = re.sub(r"(?i)(password|pass|pw|token|apikey|api-key|key|secret)\s*=\s*([^\s&]+)", r"\1=***", s)
+    return s
+
+def redact_env(env: dict[str, str]) -> dict[str, str]:
+    """Return a shallow redacted copy of env for display."""
+    shown = {}
+    for k, v in env.items():
+        if _ENV_SECRET_KEYS.search(k):
+            shown[k] = "***"
+        else:
+            shown[k] = _mask_uri(v)
+    return shown
 
 
 def _json_safe_value(v):
@@ -115,39 +181,104 @@ def to_csv(rows: List[Dict[str, Any]], header: List[str]) -> str:
 
 
 # --------------------------- Page setup ---------------------------
-st.set_page_config(page_title="Neo4j Graph Studio + CYP Loader", page_icon="🧬", layout="wide")
-st.title("🧬 Neo4j Graph Studio (CYP4Z1 Example Loader)")
+st.set_page_config(page_title="Build Neo4J Graph using ChemGraphBuilder", layout="wide")
+st.title("Build Neo4J Graph using ChemGraphBuilder")
 
 # --------------------------- Connection (sidebar) ---------------------------
+file_ = open("images/kg_icon.webp", "rb").read()
+base64_image = base64.b64encode(file_).decode("utf-8")
+st.sidebar.markdown(
+    f"""
+    <div style="display: flex; align-items: center; justify-content: center; padding-bottom: 10px;">
+        <!-- Logo -->
+        <div style="display: flex; align-items: center; margin-right: 10px;">
+            <img src="data:image/png;base64,{base64_image}" alt="Logo" width="100" style="border-radius: 5px;">
+        </div>
+        <!-- Separator -->
+        <div style="width: 4px; height: 50px; background-color: #ccc; margin-right: 10px;"></div>
+        <!-- Text -->
+        <div style="font-size: 20px; font-weight: bold; color: #112f5f;">
+            ChemGraphBuilder
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+st.sidebar.write("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+st.sidebar.write("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+# --------------------------- Connection (sidebar) ---------------------------
 with st.sidebar:
-    st.subheader("Connection")
-    uri = st.text_input("BOLT URI", value=st.secrets.get("NEO4J_URI", "neo4j+s://<your-aura-host>:7687"))
-    user = st.text_input("Username", value=st.secrets.get("NEO4J_USER", "neo4j"))
-    password = st.text_input("Password", type="password", value=st.secrets.get("NEO4J_PASSWORD", ""))
-    database = st.text_input("Database", value=st.secrets.get("NEO4J_DATABASE", "neo4j"))
-    connect_btn = st.button("Connect / Reconnect", type="primary")
+    st.subheader("Provide Neo4j Aura Credentials")
+
+    source = st.radio(
+        "Credential source",
+        ["Enter manually", "Use st.secrets"],
+        horizontal=True,
+        index=0,
+        help="Select where to read the connection details from.",
+    )
+
+    # Defaults (prefer secrets if available)
+    default_uri  = "neo4j+s://<your-aura-host>:7687"
+    default_user = "neo4j"
+    default_db   = "neo4j"
+    default_pwd  = ""
+    default_enz  = ""
+
+    if source == "Use st.secrets":
+        uri_input  = st.secrets.get("NEO4J_URI")
+        user_input = st.secrets.get("NEO4J_USER")
+        db_input   = st.secrets.get("NEO4J_DATABASE")
+        pwd_input  = st.secrets.get("NEO4J_PASSWORD")
+        enz_input  = st.secrets.get("ENZYMES")
+        st.caption("Using credentials from st.secrets (values are hidden).")
+    else:
+        uri_input  = st.text_input("Aura URI", value=default_uri)
+        user_input = st.text_input("Username", value=default_user)
+        pwd_input  = st.text_input("Password / Token", type="password", value=default_pwd)
+        db_input   = st.text_input("Database", value=default_db)
+        enz_input  = st.text_input("Enzyme list (comma-separated)", help="Example: CYP2J2,CYP2C9,CYP3A4")
+
+    # Store in session for reuse everywhere
+    st.session_state["conn_uri"]  = uri_input
+    st.session_state["conn_user"] = user_input
+    st.session_state["conn_pwd"]  = pwd_input
+    st.session_state["conn_db"]   = db_input
+    st.session_state["enz_list"]  = enz_input
+
+    connect_btn = st.button("Connect / Reconnect", type="primary", use_container_width=True)
 
 @st.cache_resource(show_spinner=False)
 def get_driver(uri_: str, user_: str, pw_: str):
     return GraphDatabase.driver(uri_, auth=(user_, pw_))
 
-if "driver" not in st.session_state and uri and password:
+# Attempt auto-connect if uri + pwd are present
+if "driver" not in st.session_state and st.session_state.get("conn_uri") and st.session_state.get("conn_pwd"):
     try:
-        st.session_state.driver = get_driver(uri, user, password)
-        st.session_state.db = database or "neo4j"
+        st.session_state.driver = get_driver(
+            st.session_state["conn_uri"],
+            st.session_state["conn_user"],
+            st.session_state["conn_pwd"]
+        )
+        st.session_state.db = st.session_state.get("conn_db") or "neo4j"
     except Exception as e:
         st.warning(f"Auto-connect failed: {e}")
 
 if connect_btn:
     try:
-        st.session_state.driver = get_driver(uri, user, password)
-        st.session_state.db = database or "neo4j"
+        st.session_state.driver = get_driver(
+            st.session_state["conn_uri"],
+            st.session_state["conn_user"],
+            st.session_state["conn_pwd"]
+        )
+        st.session_state.db = st.session_state.get("conn_db") or "neo4j"
         st.success("Connected.")
     except Exception as e:
         st.error(f"Connection failed: {e}")
 
 driver = st.session_state.get("driver")
-db = st.session_state.get("db", "neo4j")
+db = st.session_state.get("conn_db", "neo4j")
+
 
 # --------------------------- Neo4j helpers ---------------------------
 def run_cypher(q: str, params: Dict[str, Any] | None = None):
@@ -265,14 +396,22 @@ def render_agraph(nodes: List[Node], rels: List[Relationship], height=650, physi
     agraph(nodes=a_nodes, edges=a_edges, config=cfg)
 
 # --------------------------- Pipeline commands ---------------------------
-def commands_for_example(neo4j_uri: str, neo4j_password: str) -> List[List[str]]:
-    u = neo4j_uri; pw = neo4j_password
-    cmds = [
+# --------------------------- Pipeline commands ---------------------------
+def commands_for_run(enzymes: list[str], neo4j_uri: str, neo4j_password: str) -> List[List[str]]:
+    """
+    Build a runnable command list for the provided enzyme symbols.
+    We keep --password flags for now (they will be redacted in UI).
+    """
+    u = neo4j_uri
+    pw = neo4j_password
+    enz_csv = ",".join(enzymes) if enzymes else "CYP2J2"
+
+    core = [
         "setup-data-folder",
-        "collect-process-nodes --node_type Compound --enzyme_list CYP4Z1 --start_chunk 0",
-        "collect-process-nodes --node_type BioAssay --enzyme_list CYP4Z1 --start_chunk 0",
-        "collect-process-nodes --node_type Gene --enzyme_list CYP4Z1 --start_chunk 0",
-        "collect-process-nodes --node_type Protein --enzyme_list CYP4Z1 --start_chunk 0",
+        f"collect-process-nodes --node_type Compound --enzyme_list {enz_csv} --start_chunk 0",
+        f"collect-process-nodes --node_type BioAssay --enzyme_list {enz_csv} --start_chunk 0",
+        f"collect-process-nodes --node_type Gene --enzyme_list {enz_csv} --start_chunk 0",
+        f"collect-process-nodes --node_type Protein --enzyme_list {enz_csv} --start_chunk 0",
         "collect-process-relationships --relationship_type Assay_Compound --start_chunk 0",
         "collect-process-relationships --relationship_type Assay_Gene --start_chunk 0",
         "collect-process-relationships --relationship_type Gene_Protein --start_chunk 0",
@@ -282,7 +421,9 @@ def commands_for_example(neo4j_uri: str, neo4j_password: str) -> List[List[str]]
         "collect-process-relationships --relationship_type Compound_Gene_Cooccurrence --start_chunk 0",
         "collect-process-relationships --relationship_type Compound_Gene_Interaction --start_chunk 0",
         "collect-process-relationships --relationship_type Compound_Transformation --start_chunk 0",
-        f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label Compound",
+    ]
+
+    loads = [
         f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label Compound",
         f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label BioAssay",
         f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label Protein",
@@ -296,7 +437,9 @@ def commands_for_example(neo4j_uri: str, neo4j_password: str) -> List[List[str]]
         f"load-graph-relationships --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --relationship_type Compound_Compound_CoOccurrence",
         f"load-graph-relationships --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --relationship_type Compound_Transformation",
     ]
-    return [shlex.split(c) for c in cmds]
+
+    return [shlex.split(c) for c in (core + loads)]
+
 
 def safe_rename(src: str, dst: str, cwd: str, retries: int = 10, delay: float = 0.2):
     """Cross-platform rename with light retry (helps on Windows if a writer closes late)."""
@@ -328,10 +471,11 @@ def run_pipeline(commands: list[list[str]], extra_env: dict[str, str] | None = N
     total = len(commands)
     logs: list[dict] = []
 
-    st.write("**Starting CYP4Z1 example loader…**")
+    st.write("**Starting CYP2J2 example loader…**")
     for i, argv in enumerate(commands, start=1):
-        cmd_str = " ".join(shlex.quote(a) for a in argv)
-        st.write(f"**Step {i}/{total}** → `{cmd_str}`")
+        cmd_str_safe = redact_argv(argv)
+        st.write(f"**Step {i}/{total}** → `{cmd_str_safe}`")
+
         t0 = time.perf_counter()
 
         # ---- intercept rename steps (portable) ----
@@ -341,7 +485,7 @@ def run_pipeline(commands: list[list[str]], extra_env: dict[str, str] | None = N
             try:
                 safe_rename(argv[1], argv[2], cwd=cwd)
                 dt = time.perf_counter() - t0
-                logs.append({"cmd": cmd_str, "returncode": 0, "seconds": round(dt, 3)})
+                logs.append({"cmd": cmd_str_safe, "returncode": 0, "seconds": round(dt, 3)})
                 st.success(f"✅ Renamed {argv[1]} → {argv[2]} in {dt:.2f}s")
                 progress.progress(int(i * 100 / total))
                 continue  # IMPORTANT: don’t fall through to Popen on mv/ren
@@ -368,58 +512,88 @@ def run_pipeline(commands: list[list[str]], extra_env: dict[str, str] | None = N
         assert proc.stdout is not None
         for line in proc.stdout:
             line = line.rstrip("\n")
-            out_lines.append(line)
-            st.write(line)
+            st.write(redact_text(line))
+
 
         ret = proc.wait()
         dt = time.perf_counter() - t0
-        logs.append({"cmd": cmd_str, "returncode": ret, "seconds": round(dt, 3)})
+        logs.append({"cmd": cmd_str_safe, "returncode": ret, "seconds": round(dt, 3)})
 
         if ret != 0:
             st.error(f"❌ Failed (exit {ret}) in {dt:.2f}s")
-            raise RuntimeError(f"Command failed: {cmd_str}")
+            raise RuntimeError(f"Command failed: {cmd_str_safe}")
 
         st.success(f"✅ Finished in {dt:.2f}s")
         progress.progress(int(i * 100 / total))
 
-    st.success("🎉 CYP4Z1 pipeline completed.")
+    st.success("🎉 CYP2J2 pipeline completed.")
     return logs
 
 # --------------------------- Tabs (no expanders) ---------------------------
-tab_loader, tab_workbench, tab_explorer, tab_visual = st.tabs(
-    ["Example Loader", "Query Workbench", "Subgraph Explorer", "Visualize"]
+tab_loader, tab_workbench, tab_visual = st.tabs(
+    ["Example Loader", "Query/Explore Neo4j Graph","Visualize"]
 )
 
 # ----- Example Loader (no expanders) -----
 with tab_loader:
-    st.subheader("Run Example (CYP4Z1) — Multi-command Loader")
-    colA, colB, colC = st.columns([2, 2, 2])
+    st.subheader("Create Database — Use Your Enzymes or the Example")
+
+    colA, colB = st.columns([2, 2])
     with colA:
         wipe_first = st.toggle("Wipe existing graph first", value=False, help="Runs MATCH (n) DETACH DELETE n")
     with colB:
         show_cmds = st.toggle("Show commands before running", value=True)
-    with colC:
-        confirm = st.text_input("Type 'yes' to confirm", value="")
-    run_btn = st.button("Run example pipeline", type="primary", use_container_width=True)
+
+    mode = st.radio(
+        "Run mode",
+        ["Build from my enzyme list", "Run the example (CYP2J2)"],
+        horizontal=True,
+        index=0
+    )
+
+    run_btn = st.button("Run pipeline", type="primary", use_container_width=True)
 
     if run_btn:
+        uri = st.session_state.get("conn_uri") or ""
+        user = st.session_state.get("conn_user") or "neo4j"
+        password = st.session_state.get("conn_pwd") or ""
+        database = st.session_state.get("conn_db") or "neo4j"
+
         if not uri or not password:
-            st.error("Provide Aura URI/password in the sidebar.")
-        elif confirm.lower() != "yes":
-            st.warning("Please type 'yes' to confirm.")
+            st.error("Provide Aura URI/password in the sidebar (or via st.secrets).")
         else:
             try:
+                # choose enzymes (user list or example)
+                enzymes = ["CYP2J2"] if mode.endswith("(CYP2J2)") else _parse_enzyme_list(st.session_state.get("enz_list") or "CYP2J2")
+                if not enzymes:
+                    st.error("Your enzyme list is empty/invalid. Example: CYP2J2,CYP2C9")
+                    st.stop()
+
                 if wipe_first and driver:
                     run_cypher("MATCH (n) DETACH DELETE n")
                     st.info("Graph wiped.")
-                cmds = commands_for_example(uri, password)
+
+                cmds = commands_for_run(enzymes, uri, password)
+
+                # Clean Data/ and show redacted commands if requested
                 target = Path("Data")
                 if target.exists():
+                    import shutil
                     shutil.rmtree(target)
                     print(f"Removed folder: {target}")
+
                 if show_cmds:
-                    st.code("\n".join(" ".join(map(shlex.quote, c)) for c in cmds), language="bash")
-                env = {"NEO4J_URI": uri, "NEO4J_PASSWORD": password, "NEO4J_USER": user or "neo4j", "NEO4J_DATABASE": db}
+                    st.code("\n".join(redact_argv(c) for c in cmds), language="bash")
+
+                # Pass safe ENV as well (tools can prefer these)
+                env = {
+                    "NEO4J_URI": uri,
+                    "NEO4J_PASSWORD": password,
+                    "NEO4J_USER": user or "neo4j",
+                    "NEO4J_DATABASE": database,
+                    "ENZYMES": ",".join(enzymes),
+                }
+
                 logs = run_pipeline(cmds, extra_env=env, cwd=".")
             except Exception as e:
                 st.error(f"Pipeline error: {e}")
@@ -498,40 +672,6 @@ with tab_workbench:
         with d2: 
             st.download_button("⬇️ CSV", data=csv_text, file_name="cypher_result.csv", mime="text/csv", key="qw_csv_dl", use_container_width=True)
 
-# ----- Subgraph Explorer -----
-with tab_explorer:
-    st.subheader("Subgraph Explorer")
-    colx, coly, colz = st.columns([3, 2, 2])
-    with colx:
-        start_label = st.text_input("Start label (optional)", "")
-        start_key   = st.text_input("Match key", "name")
-        start_val   = st.text_input("Match value (optional)", "")
-    with coly:
-        hops = st.slider("Hops", 1, 3, 2)
-    with colz:
-        sub_limit = st.slider("Max rows", 50, 2000, 400, 50)
-
-    fetch = st.button("Fetch subgraph", type="secondary")
-    if fetch:
-        try:
-            if start_label and start_val:
-                q = f"""
-                MATCH (s:{start_label} {{{start_key}:$v}})
-                CALL apoc.path.expandConfig(s, {{maxLevel:{hops}}}) YIELD path
-                WITH path LIMIT $limit
-                UNWIND nodes(path) AS n
-                WITH DISTINCT n LIMIT $limit
-                MATCH (n)-[r]-(m)
-                RETURN n,r,m LIMIT $limit
-                """
-                rows, _ = run_cypher(q, {"v": start_val, "limit": sub_limit})
-            else:
-                rows, _ = run_cypher("MATCH (n)-[r]-(m) RETURN n,r,m LIMIT $limit", {"limit": sub_limit})
-            st.success(f"Fetched {len(rows)} row(s).")
-            st.session_state["_last_rows"] = rows
-        except Exception as e:
-            st.error(f"Subgraph error: {e}")
-
 # ----- Visualize -----
 with tab_visual:
     st.subheader("Visualize")
@@ -577,3 +717,29 @@ with tab_visual:
             render_agraph(nodes, rels, height=650, physics=physics)
         else:
             render_pyvis(nodes, rels, height=650, physics=physics, hierarchical=hierarchical)
+
+    st.sidebar.divider()
+    st.sidebar.markdown(
+        """
+        <br>
+        <div style="text-align: center;">
+            <p style="font-size: 12px; color: gray;">
+                © 2025 Asmaa A. Abdelwahab
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.sidebar.markdown(
+        """
+        <div style="display: flex; align-items: center; justify-content: center;">
+            <a href="https://github.com/asmaa-a-abdelwahab" target="_blank" style="text-decoration: none;">
+                <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub Logo" style="width:40px; height:40px; margin-right: 10px;">
+            </a>
+            <a href="https://github.com/asmaa-a-abdelwahab" target="_blank" style="text-decoration: none;">
+                <p style="font-size: 16px; font-weight: bold; color: black; margin: 0;">@asmaa-a-abdelwahab</p>
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
