@@ -29,12 +29,6 @@ _ENV_SECRET_KEYS = re.compile(r"(PASS(WORD)?|TOKEN|API[_-]?KEY|SECRET)", re.I)
 _URI_CRED_RE = re.compile(r"(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<user>[^:/@]+):(?P<pw>[^@]+)@")
 
 # --------------------------- Config helpers ---------------------------
-def _get_secret(key: str, default: str = "") -> str:
-    try:
-        return st.secrets.get(key, default)  # works even if key not present
-    except Exception:
-        return default
-
 def _parse_enzyme_list(s: str) -> list[str]:
     # normalize: split comma/whitespace, uppercase, keep CYP-like tokens
     toks = [t.strip().upper() for t in re.split(r"[,\s]+", s or "") if t.strip()]
@@ -43,12 +37,20 @@ def _parse_enzyme_list(s: str) -> list[str]:
 
 
 def _mask_uri(s: str) -> str:
+    s = "" if s is None else (s if isinstance(s, str) else str(s))
     return _URI_CRED_RE.sub(lambda m: f"{m.group('scheme')}***:***@", s)
 
 def _mask_equals_form(s: str) -> str:
-    # e.g. --password=abc  -> --password=***
-    return re.sub(r"(--(?:password|pass|pw|token|apikey|api-key|key|secret))\s*=\s*([^\s]+)",
-                  r"\1=***", s, flags=re.I)
+    s = "" if s is None else (s if isinstance(s, str) else str(s))
+    return re.sub(r"(--(?:password|pass|pw|token|apikey|api-key|key|secret))\s*=\s*([^\s]+)", r"\1=***", s, flags=re.I)
+
+def redact_text(s: str) -> str:
+    s = "" if s is None else (s if isinstance(s, str) else str(s))
+    s = _mask_uri(s)
+    s = _mask_equals_form(s)
+    s = re.sub(r"(?i)(password|pass|pw|token|apikey|api-key|key|secret)\s*=\s*([^\s&]+)", r"\1=***", s)
+    return s
+
 
 def redact_argv(argv: list[str]) -> str:
     """Return a printable (masked) version of argv."""
@@ -67,14 +69,6 @@ def redact_argv(argv: list[str]) -> str:
         masked.append(a_masked)
         i += 1
     return " ".join(shlex.quote(x) for x in masked)
-
-def redact_text(s: str) -> str:
-    """General redactor for any line of text."""
-    s = _mask_uri(s)
-    s = _mask_equals_form(s)
-    # also mask query-style ...password=... in arbitrary text
-    s = re.sub(r"(?i)(password|pass|pw|token|apikey|api-key|key|secret)\s*=\s*([^\s&]+)", r"\1=***", s)
-    return s
 
 def redact_env(env: dict[str, str]) -> dict[str, str]:
     """Return a shallow redacted copy of env for display."""
@@ -204,7 +198,7 @@ st.sidebar.markdown(
     """,
     unsafe_allow_html=True,
 )
-st.sidebar.write("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+st.sidebar.divider()
 st.sidebar.write("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 # --------------------------- Connection (sidebar) ---------------------------
 with st.sidebar:
@@ -223,14 +217,14 @@ with st.sidebar:
     default_user = "neo4j"
     default_db   = "neo4j"
     default_pwd  = ""
-    default_enz  = ""
+    default_enz  = st.secrets.get("ENZYMES")
 
     if source == "Use st.secrets":
         uri_input  = st.secrets.get("NEO4J_URI")
         user_input = st.secrets.get("NEO4J_USER")
         db_input   = st.secrets.get("NEO4J_DATABASE")
         pwd_input  = st.secrets.get("NEO4J_PASSWORD")
-        enz_input  = st.secrets.get("ENZYMES")
+        enz_input  = default_enz
         st.caption("Using credentials from st.secrets (values are hidden).")
     else:
         uri_input  = st.text_input("Aura URI", value=default_uri)
@@ -279,7 +273,6 @@ if connect_btn:
 driver = st.session_state.get("driver")
 db = st.session_state.get("conn_db", "neo4j")
 
-
 # --------------------------- Neo4j helpers ---------------------------
 def run_cypher(q: str, params: Dict[str, Any] | None = None):
     if not driver:
@@ -294,26 +287,36 @@ def extract_graph(records: Iterable[dict]) -> Tuple[List[Node], List[Relationshi
     rels: List[Relationship] = []
 
     def add_node(n: Node | None):
-        if not n: return
+        if not n:
+            return
         nid = getattr(n, "element_id", None) or str(getattr(n, "id", None))
-        if nid and nid not in nodes: nodes[nid] = n
+        if nid and nid not in nodes: 
+            nodes[nid] = n
 
     for rec in records:
         for v in rec.values():
             if isinstance(v, Node):
                 add_node(v)
             elif isinstance(v, Relationship):
-                rels.append(v); add_node(v.start_node); add_node(v.end_node)
+                rels.append(v)
+                add_node(v.start_node)
+                add_node(v.end_node)
             elif isinstance(v, (list, tuple)):
                 for it in v:
-                    if isinstance(it, Node): add_node(it)
+                    if isinstance(it, Node): 
+                        add_node(it)
                     elif isinstance(it, Relationship):
-                        rels.append(it); add_node(it.start_node); add_node(it.end_node)
+                        rels.append(it)
+                        add_node(it.start_node)
+                        add_node(it.end_node)
             elif isinstance(v, dict):
                 for it in v.values():
-                    if isinstance(it, Node): add_node(it)
+                    if isinstance(it, Node): 
+                        add_node(it)
                     elif isinstance(it, Relationship):
-                        rels.append(it); add_node(it.start_node); add_node(it.end_node)
+                        rels.append(it)
+                        add_node(it.start_node)
+                        add_node(it.end_node)
     return list(nodes.values()), rels
 
 # --------------------------- Visualizers ---------------------------
@@ -373,18 +376,22 @@ def render_pyvis(nodes: List[Node], rels: List[Relationship], height=650, physic
     components.html(net.generate_html(), height=height, scrolling=True)
     
 def render_agraph(nodes: List[Node], rels: List[Relationship], height=650, physics=True):
-    a_nodes: List[ANode] = []; a_edges: List[AEdge] = []
+    a_nodes: List[ANode] = []
+    a_edges: List[AEdge] = []
     deg = defaultdict(int)
     for r in rels:
         sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
         tid = getattr(r.end_node, "element_id", None) or str(getattr(r.end_node, "id", None))
-        deg[sid]+=1; deg[tid]+=1
+        deg[sid]+=1
+        deg[tid]+=1
     seen: Set[str] = set()
     for n in nodes:
         nid = getattr(n, "element_id", None) or str(getattr(n, "id", None))
-        if not nid or nid in seen: continue
+        if not nid or nid in seen: 
+            continue
         seen.add(nid)
-        labels = ":".join(list(n.labels)); props = dict(n.items())
+        labels = ":".join(list(n.labels))
+        props = dict(n.items())
         label_text = props.get("name") or props.get("title") or props.get("id") or labels or nid
         size = 10 + min(26, deg.get(nid, 0) * 2)
         a_nodes.append(ANode(id=nid, label=str(label_text), title=f"{labels}\n{json.dumps(props, ensure_ascii=False)}", size=size))
@@ -396,22 +403,25 @@ def render_agraph(nodes: List[Node], rels: List[Relationship], height=650, physi
     agraph(nodes=a_nodes, edges=a_edges, config=cfg)
 
 # --------------------------- Pipeline commands ---------------------------
-# --------------------------- Pipeline commands ---------------------------
-def commands_for_run(enzymes: list[str], neo4j_uri: str, neo4j_password: str) -> List[List[str]]:
+def commands_for_run(neo4j_uri: str, neo4j_password: str, enzymes: list[str] | str = None) -> List[List[str]]:
     """
     Build a runnable command list for the provided enzyme symbols.
-    We keep --password flags for now (they will be redacted in UI).
+    `enzymes` can be a list like ["CYP4X1","CYP4Z1"] or a comma-separated string.
     """
+    # enzymes = enzymes or []
+    # if isinstance(enzymes, str):
+    #     enzymes = [t.strip() for t in enzymes.split(",") if t.strip()]
+    # enzymes = ",".join(enzymes)
+
     u = neo4j_uri
     pw = neo4j_password
-    enz_csv = ",".join(enzymes) if enzymes else "CYP2J2"
 
     core = [
         "setup-data-folder",
-        f"collect-process-nodes --node_type Compound --enzyme_list {enz_csv} --start_chunk 0",
-        f"collect-process-nodes --node_type BioAssay --enzyme_list {enz_csv} --start_chunk 0",
-        f"collect-process-nodes --node_type Gene --enzyme_list {enz_csv} --start_chunk 0",
-        f"collect-process-nodes --node_type Protein --enzyme_list {enz_csv} --start_chunk 0",
+        f"collect-process-nodes --node_type Compound --enzyme_list {enzymes} --start_chunk 0",
+        f"collect-process-nodes --node_type BioAssay --enzyme_list {enzymes} --start_chunk 0",
+        f"collect-process-nodes --node_type Gene --enzyme_list {enzymes} --start_chunk 0",
+        f"collect-process-nodes --node_type Protein --enzyme_list {enzymes} --start_chunk 0",
         "collect-process-relationships --relationship_type Assay_Compound --start_chunk 0",
         "collect-process-relationships --relationship_type Assay_Gene --start_chunk 0",
         "collect-process-relationships --relationship_type Gene_Protein --start_chunk 0",
@@ -426,6 +436,7 @@ def commands_for_run(enzymes: list[str], neo4j_uri: str, neo4j_password: str) ->
     loads = [
         f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label Compound",
         f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label BioAssay",
+        f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label Gene",
         f"load-graph-nodes --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --label Protein",
         f"load-graph-relationships --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --relationship_type Assay_Compound",
         f"load-graph-relationships --uri {shlex.quote(u)} --username neo4j --password {shlex.quote(pw)} --relationship_type Assay_Gene",
@@ -471,7 +482,7 @@ def run_pipeline(commands: list[list[str]], extra_env: dict[str, str] | None = N
     total = len(commands)
     logs: list[dict] = []
 
-    st.write("**Starting CYP2J2 example loader…**")
+    st.write("**Starting {} example loader…**".format(st.secrets.get('ENZYMES')))
     for i, argv in enumerate(commands, start=1):
         cmd_str_safe = redact_argv(argv)
         st.write(f"**Step {i}/{total}** → `{cmd_str_safe}`")
@@ -526,7 +537,7 @@ def run_pipeline(commands: list[list[str]], extra_env: dict[str, str] | None = N
         st.success(f"✅ Finished in {dt:.2f}s")
         progress.progress(int(i * 100 / total))
 
-    st.success("🎉 CYP2J2 pipeline completed.")
+    st.success("🎉 {} pipeline completed.".format(enz_input))
     return logs
 
 # --------------------------- Tabs (no expanders) ---------------------------
@@ -546,7 +557,7 @@ with tab_loader:
 
     mode = st.radio(
         "Run mode",
-        ["Build from my enzyme list", "Run the example (CYP2J2)"],
+        ["Build from my enzyme list", "Run the example ({})".format(enz_input)],
         horizontal=True,
         index=0
     )
@@ -563,17 +574,21 @@ with tab_loader:
             st.error("Provide Aura URI/password in the sidebar (or via st.secrets).")
         else:
             try:
-                # choose enzymes (user list or example)
-                enzymes = ["CYP2J2"] if mode.endswith("(CYP2J2)") else _parse_enzyme_list(st.session_state.get("enz_list") or "CYP2J2")
-                if not enzymes:
-                    st.error("Your enzyme list is empty/invalid. Example: CYP2J2,CYP2C9")
-                    st.stop()
+                # # choose enzymes (user list or example)
+                # if mode.startswith("Run the example"):
+                #     enzymes = enz_input
+                # else:
+                #     enzymes = _parse_enzyme_list(st.session_state.get("enz_list") or "")
+
+                # if not enzymes:
+                #     st.error("Your enzyme list is empty/invalid.")
+                #     st.stop()
+
+                cmds = commands_for_run(neo4j_uri=uri, neo4j_password=password, enzymes=enz_input)
 
                 if wipe_first and driver:
                     run_cypher("MATCH (n) DETACH DELETE n")
                     st.info("Graph wiped.")
-
-                cmds = commands_for_run(enzymes, uri, password)
 
                 # Clean Data/ and show redacted commands if requested
                 target = Path("Data")
@@ -591,7 +606,7 @@ with tab_loader:
                     "NEO4J_PASSWORD": password,
                     "NEO4J_USER": user or "neo4j",
                     "NEO4J_DATABASE": database,
-                    "ENZYMES": ",".join(enzymes),
+                    "ENZYMES": enz_input,
                 }
 
                 logs = run_pipeline(cmds, extra_env=env, cwd=".")
@@ -680,10 +695,14 @@ with tab_visual:
         st.info("Run a query (or fetch a subgraph) first.")
     else:
         v1, v2, v3, v4 = st.columns([1,1,1,1])
-        with v1: renderer = st.selectbox("Renderer", ["Agraph (fast)", "PyVis (rich)"], index=0)
-        with v2: physics = st.toggle("Enable Graph Physics", True)
-        with v3: hierarchical = st.toggle("Hierarchical (PyVis only)", False)
-        with v4: edge_cap = st.slider("Edge cap", 100, 5000, 2000, 100)
+        with v1: 
+            renderer = st.selectbox("Renderer", ["Agraph (fast)", "PyVis (rich)"], index=0)
+        with v2: 
+            physics = st.toggle("Enable Graph Physics", True)
+        with v3: 
+            hierarchical = st.toggle("Hierarchical (PyVis only)", False)
+        with v4: 
+            edge_cap = st.slider("Edge cap", 100, 5000, 2000, 100)
 
         nodes, rels = extract_graph(rows)
         # Build CSVs for downloads
@@ -710,7 +729,8 @@ with tab_visual:
                 use_container_width=True,
             )
 
-        if len(rels) > edge_cap: rels = rels[:edge_cap]
+        if len(rels) > edge_cap: 
+            rels = rels[:edge_cap]
         st.caption(f"Rendering {len(nodes)} nodes / {len(rels)} relationships")
 
         if renderer.startswith("Agraph"):
