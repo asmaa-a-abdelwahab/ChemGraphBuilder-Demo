@@ -196,10 +196,56 @@ st.set_page_config(
 )
 st.title("Build Neo4J Graph using ChemGraphBuilder")
 
-# ---- Global layout + tabs styling (keep this if you already have it) ----
+# ---- Global layout + tabs styling 
 st.markdown(
     """
     <style>
+    /* Reduce side padding so content + tabs use more horizontal space */
+    .main .block-container {
+        padding-top: 0.75rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+
+    /* Make Streamlit tabs behave like full-width segmented controls */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0;                            /* no gaps between tabs */
+        margin-top: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        flex: 1;                           /* each tab takes equal width */
+        justify-content: center;
+        font-size: 0.95rem;
+        font-weight: 600;
+        padding: 0.75rem 1rem;
+        border-radius: 0;                  /* flat top bar look */
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: #4b5563;                    /* text grey */
+        background-color: #e5e7eb;         /* light grey */
+    }
+
+    /* Round only the outer corners of the tab bar */
+    .stTabs [data-baseweb="tab"]:first-child {
+        border-top-left-radius: 0.75rem;
+    }
+    .stTabs [data-baseweb="tab"]:last-child {
+        border-top-right-radius: 0.75rem;
+    }
+
+    /* Active tab */
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: #ffffff;
+        background-color: #1f2937;         /* dark header */
+        border-bottom: 2px solid #f97316;  /* orange accent line */
+    }
+
+    /* Hover state */
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #d1d5db;
+    }
     /* Main area padding */
     .main .block-container {
         padding-top: 0.75rem;
