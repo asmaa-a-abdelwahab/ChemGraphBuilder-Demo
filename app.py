@@ -766,7 +766,9 @@ def run_pipeline(commands: list[list[str]], extra_env: dict[str, str] | None = N
     total = len(commands)
     logs: list[dict] = []
 
-    st.write("**Starting {} example loader…**".format(st.secrets.get('ENZYMES')))
+    enz_label = env.get("ENZYMES", "example")
+    st.write(f"**Starting {enz_label} loader…**")
+    
     for i, argv in enumerate(commands, start=1):
         cmd_str_safe = redact_argv(argv)
         st.write(f"**Step {i}/{total}** → `{cmd_str_safe}`")
@@ -829,21 +831,28 @@ tab_loader, tab_workbench, tab_visual = st.tabs(
     ["Example Loader", "Query/Explore Neo4j Graph","Visualize"]
 )
 
-# ----- Example Loader (no expanders) -----
 with tab_loader:
     st.subheader("Create Database — Use Your Enzymes or the Example")
 
     colA, colB = st.columns([2, 2])
     with colA:
-        wipe_first = st.toggle("Wipe existing graph first", value=False, help="Runs MATCH (n) DETACH DELETE n")
+        wipe_first = st.toggle(
+            "Wipe existing graph first",
+            value=False,
+            help="Runs MATCH (n) DETACH DELETE n"
+        )
     with colB:
         show_cmds = st.toggle("Show commands before running", value=True)
 
     mode = st.radio(
         "Run mode",
-        ["Build from my enzyme list", "Run the example ({})".format(enz_input)],
+        [
+            "Build from my enzyme list (select Enter manually in the sidebar)",
+            "Run Small example (CYP4Z1)",
+            "Run Larger example (CYP2U1)",
+        ],
         horizontal=True,
-        index=0
+        index=0,
     )
 
     run_btn = st.button("Run pipeline", type="primary", use_container_width=True)
@@ -858,17 +867,24 @@ with tab_loader:
             st.error("Provide Aura URI/password in the sidebar (or via st.secrets).")
         else:
             try:
-                # # choose enzymes (user list or example)
-                # if mode.startswith("Run the example"):
-                #     enzymes = enz_input
-                # else:
-                #     enzymes = _parse_enzyme_list(st.session_state.get("enz_list") or "")
+                # -------- choose enzymes based on mode --------
+                if mode.startswith("Build from my enzyme list"):
+                    enz_list = _parse_enzyme_list(st.session_state.get("enz_list") or "")
+                    if not enz_list:
+                        st.error("Your enzyme list is empty or invalid.")
+                        st.stop()
+                    enzymes_str = ",".join(enz_list)
+                elif "Small example" in mode:
+                    enzymes_str = "CYP4Z1"
+                else:  # "Run Larger example (CYP2U1)"
+                    enzymes_str = "CYP2U1"
 
-                # if not enzymes:
-                #     st.error("Your enzyme list is empty/invalid.")
-                #     st.stop()
-
-                cmds = commands_for_run(neo4j_uri=uri, neo4j_password=password, enzymes=enz_input)
+                # use chosen enzymes here
+                cmds = commands_for_run(
+                    neo4j_uri=uri,
+                    neo4j_password=password,
+                    enzymes=enzymes_str,
+                )
 
                 if wipe_first and driver:
                     run_cypher("MATCH (n) DETACH DELETE n")
@@ -890,7 +906,7 @@ with tab_loader:
                     "NEO4J_PASSWORD": password,
                     "NEO4J_USER": user or "neo4j",
                     "NEO4J_DATABASE": database,
-                    "ENZYMES": enz_input,
+                    "ENZYMES": enzymes_str,   # <— use chosen enzymes here too
                 }
 
                 logs = run_pipeline(cmds, extra_env=env, cwd=".")
