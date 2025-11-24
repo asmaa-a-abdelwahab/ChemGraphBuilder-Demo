@@ -295,7 +295,7 @@ st.markdown(
 
     /* Footer */
     .sidebar-footer {
-        font-size: 0.75rem;
+        font-size: 1rem;
         color: #6b7280;
         text-align: center;
         margin-top: 0.75rem;
@@ -310,8 +310,8 @@ st.markdown(
         text-decoration: none;
     }
     .sidebar-footer img {
-        width: 20px;
-        height: 20px;
+        width: 40px;
+        height: 40px;
     }
     </style>
     """,
@@ -386,7 +386,7 @@ with st.sidebar:
     st.session_state["conn_db"]   = db_input
     st.session_state["enz_list"]  = enz_input
 
-    connect_btn = st.button("Connect / Reconnect", type="primary")
+    connect_btn = st.button("Connect / Reconnect", type="primary", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)  # close sidebar-section
 
     # --- Footer (always pinned at bottom visually) ---
@@ -394,7 +394,7 @@ with st.sidebar:
     st.markdown(
         """
         <div class="sidebar-footer">
-            © 2025 Asmaa A. Abdelwahab<br/>
+            © 2025 Developed by Asmaa A. Abdelwahab<br/>
             <a class="gh-link" href="https://github.com/asmaa-a-abdelwahab/ChemGraphBuilder-Demo" target="_blank">
                 <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
                      alt="GitHub">
@@ -953,7 +953,7 @@ with tab_workbench:
         csv_text = ",".join(keys) + "\n" + "\n".join([",".join(cell(r.get(k)) for k in keys) for r in safe_rows])
         return json_blob, csv_text, keys
 
-    go = st.button("Run query", type="primary")
+    go = st.button("Run query", type="primary", use_container_width=True)
 
     if go and driver:
         q = ("PROFILE " + cypher) if (profile and not cypher.strip().upper().startswith(("PROFILE","EXPLAIN"))) else cypher
