@@ -838,7 +838,7 @@ with tab_loader:
     with colA:
         wipe_first = st.toggle(
             "Wipe existing graph first",
-            value=False,
+            value=True,
             help="Runs MATCH (n) DETACH DELETE n"
         )
     with colB:
@@ -851,7 +851,7 @@ with tab_loader:
             "Run Small example (CYP4Z1)",
             "Run Larger example (CYP2U1)",
         ],
-        horizontal=True,
+        horizontal=False,
         index=0,
     )
 
