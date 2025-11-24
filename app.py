@@ -21,6 +21,22 @@ from io import StringIO
 import shutil
 import re
 
+
+# Simple color mapping by label
+LABEL_COLOR = {
+    "Compound": "#4C78A8",
+    "BioAssay": "#F58518",
+    "Gene": "#54A24B",
+    "Protein": "#E45756",
+}
+
+def _node_color(n: Node) -> str:
+    """Pick a color based on the main label of the node."""
+    for lab in n.labels:
+        if lab in LABEL_COLOR:
+            return LABEL_COLOR[lab]
+    return "#9E9E9E"  # default gray
+
 # compile once
 _SECRET_FLAGS = {"--password", "--pass", "--pw", "--token", "--apikey", "--api-key", "--key", "--secret"}
 _ENV_SECRET_KEYS = re.compile(r"(PASS(WORD)?|TOKEN|API[_-]?KEY|SECRET)", re.I)
@@ -320,7 +336,15 @@ def extract_graph(records: Iterable[dict]) -> Tuple[List[Node], List[Relationshi
     return list(nodes.values()), rels
 
 # --------------------------- Visualizers ---------------------------
-def render_pyvis(nodes: List[Node], rels: List[Relationship], height=650, physics=True, hierarchical=False):
+def render_pyvis(
+    nodes: List[Node],
+    rels: List[Relationship],
+    height: int = 650,
+    physics: bool = True,
+    hierarchical: bool = False,
+    show_labels: bool = True,
+    min_label_degree: int = 1,
+):
     net = Network(height=f"{height}px", width="100%", directed=True)
 
     if hierarchical:
@@ -334,20 +358,49 @@ def render_pyvis(nodes: List[Node], rels: List[Relationship], height=650, physic
                 }
             },
             "physics": {"enabled": False},
-            "edges": {"smooth": False},
+            "nodes": {
+                "shape": "dot",
+                "scaling": {"min": 5, "max": 35},
+                "font": {"size": 12, "multi": "html"},
+            },
+            "edges": {
+                "smooth": False,
+                "arrows": {"to": {"enabled": True}},
+                "font": {"size": 9, "align": "top"},
+            },
+            "interaction": {
+                "hover": True,
+                "navigationButtons": True,
+                "keyboard": True,
+            },
         }
     else:
         options = {
             "physics": {
                 "enabled": bool(physics),
-                "stabilization": {"iterations": 200},
+                "stabilization": {"iterations": 300},
+                "barnesHut": {"springLength": 120},
             },
-            "edges": {"smooth": False},
+            "nodes": {
+                "shape": "dot",
+                "scaling": {"min": 5, "max": 35},
+                "font": {"size": 12, "multi": "html"},
+            },
+            "edges": {
+                "smooth": {"type": "dynamic"},
+                "arrows": {"to": {"enabled": True}},
+                "font": {"size": 9, "align": "top"},
+            },
+            "interaction": {
+                "hover": True,
+                "navigationButtons": True,
+                "keyboard": True,
+            },
         }
 
-    net.set_options(json.dumps(options))  # <-- valid JSON, not JS
+    net.set_options(json.dumps(options))
 
-    # degree for sizing
+    # degree for sizing & label threshold
     deg = defaultdict(int)
     for r in rels:
         sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
@@ -361,46 +414,103 @@ def render_pyvis(nodes: List[Node], rels: List[Relationship], height=650, physic
         if not nid or nid in added:
             continue
         added.add(nid)
+
         labels = ":".join(list(n.labels))
         props = dict(n.items())
-        label_text = props.get("name") or props.get("title") or props.get("id") or labels or nid
-        size = 12 + min(28, deg.get(nid, 0) * 2)
-        title = "<br>".join([f"<b>{labels}</b>"] + [f"{k}: {v}" for k, v in props.items()])
-        net.add_node(nid, label=str(label_text), title=title, shape="dot", value=size)
+
+        # Tooltip (rich info)
+        title = "<br>".join(
+            [f"<b>{labels}</b>"]
+            + [f"<b>{k}</b>: {v}" for k, v in props.items()]
+        )
+
+        # Label text – optional + only for higher-degree nodes
+        base_label = props.get("name") or props.get("title") or props.get("id") or labels or nid
+        if show_labels and deg.get(nid, 0) >= min_label_degree:
+            label_text = str(base_label)
+        else:
+            label_text = ""  # no text on the node, just tooltip
+
+        # Size based on degree (but modest)
+        size = 5 + min(30, deg.get(nid, 0) * 1.5)
+
+        net.add_node(
+            nid,
+            label=label_text,
+            title=title,
+            value=size,
+            color=_node_color(n),
+        )
 
     for r in rels:
         sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
         tid = getattr(r.end_node, "element_id", None) or str(getattr(r.end_node, "id", None))
+        # Edge labels can be noisy; keep them but small (font options above)
         net.add_edge(sid, tid, label=r.type)
 
     components.html(net.generate_html(), height=height, scrolling=True)
+
     
-def render_agraph(nodes: List[Node], rels: List[Relationship], height=650, physics=True):
+def render_agraph(
+    nodes: List[Node],
+    rels: List[Relationship],
+    height: int = 650,
+    physics: bool = True,
+    show_labels: bool = True,
+    min_label_degree: int = 1,
+):
     a_nodes: List[ANode] = []
     a_edges: List[AEdge] = []
+
     deg = defaultdict(int)
     for r in rels:
         sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
         tid = getattr(r.end_node, "element_id", None) or str(getattr(r.end_node, "id", None))
-        deg[sid]+=1
-        deg[tid]+=1
+        deg[sid] += 1
+        deg[tid] += 1
+
     seen: Set[str] = set()
     for n in nodes:
         nid = getattr(n, "element_id", None) or str(getattr(n, "id", None))
-        if not nid or nid in seen: 
+        if not nid or nid in seen:
             continue
         seen.add(nid)
+
         labels = ":".join(list(n.labels))
         props = dict(n.items())
-        label_text = props.get("name") or props.get("title") or props.get("id") or labels or nid
-        size = 10 + min(26, deg.get(nid, 0) * 2)
-        a_nodes.append(ANode(id=nid, label=str(label_text), title=f"{labels}\n{json.dumps(props, ensure_ascii=False)}", size=size))
+
+        base_label = props.get("name") or props.get("title") or props.get("id") or labels or nid
+        if show_labels and deg.get(nid, 0) >= min_label_degree:
+            label_text = str(base_label)
+        else:
+            label_text = ""
+
+        size = 10 + min(25, deg.get(nid, 0) * 1.5)
+
+        a_nodes.append(
+            ANode(
+                id=nid,
+                label=label_text,
+                title=f"{labels}\n{json.dumps(props, ensure_ascii=False)}",
+                size=size,
+                color=_node_color(n),
+            )
+        )
+
     for r in rels:
         sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
         tid = getattr(r.end_node, "element_id", None) or str(getattr(r.end_node, "id", None))
         a_edges.append(AEdge(source=sid, target=tid, label=r.type))
-    cfg = AConfig(height=height, width="100%", directed=True, physics=physics, hierarchical=False)
+
+    cfg = AConfig(
+        height=height,
+        width="100%",
+        directed=True,
+        physics=physics,
+        hierarchical=False,
+    )
     agraph(nodes=a_nodes, edges=a_edges, config=cfg)
+
 
 # --------------------------- Pipeline commands ---------------------------
 def commands_for_run(neo4j_uri: str, neo4j_password: str, enzymes: list[str] | str = None) -> List[List[str]]:
@@ -618,13 +728,35 @@ with tab_workbench:
     st.subheader("Cypher Workbench")
     c1, c2, c3, c4 = st.columns([4, 2, 2, 2])
     with c1:
-        preset = st.selectbox("Preset", [
-            "MATCH (n) RETURN n LIMIT $limit",
-            "MATCH (n)-[r]->(m) RETURN n,r,m LIMIT $limit",
-            "MATCH p=(n)-[r]->(m) RETURN p LIMIT $limit",
-            "CALL db.labels() YIELD label RETURN label LIMIT $limit",
-            "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType LIMIT $limit",
-        ], index=1)
+        preset = st.selectbox(
+            "Preset",
+            [
+                # 0 – basic node listing
+                "MATCH (n) RETURN n LIMIT $limit",
+
+                # 1 – basic edge listing
+                "MATCH (n)-[r]->(m) RETURN n,r,m LIMIT $limit",
+
+                # 2 – count nodes per label
+                """MATCH (n)
+                UNWIND labels(n) AS label
+                RETURN label, count(*) AS count
+                ORDER BY count DESC""",
+
+                # 3 – count relationships per type
+                """MATCH ()-[r]->()
+                RETURN type(r) AS relationshipType, count(*) AS count
+                ORDER BY count DESC""",
+
+                # 4 – list labels
+                "CALL db.labels() YIELD label RETURN label LIMIT $limit",
+
+                # 5 – list relationship types
+                "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType LIMIT $limit",
+            ],
+            index=1,
+        )
+
     with c2:
         limit = st.slider("LIMIT", 25, 2000, 200, 25)
     with c3:
@@ -704,6 +836,12 @@ with tab_visual:
         with v4: 
             edge_cap = st.slider("Edge cap", 100, 5000, 2000, 100)
 
+
+        show_labels = st.checkbox("Show node labels", value=True)
+        min_label_degree = st.slider(
+            "Min degree for showing label", 0, 10, 1, 1,
+            help="Increase to show labels only for better-connected nodes."
+        )
         nodes, rels = extract_graph(rows)
         # Build CSVs for downloads
         node_rows, node_header = nodes_to_table(nodes)
@@ -728,15 +866,30 @@ with tab_visual:
                 mime="text/csv",
                 use_container_width=True,
             )
-
         if len(rels) > edge_cap: 
             rels = rels[:edge_cap]
         st.caption(f"Rendering {len(nodes)} nodes / {len(rels)} relationships")
 
         if renderer.startswith("Agraph"):
-            render_agraph(nodes, rels, height=650, physics=physics)
+            render_agraph(
+                nodes,
+                rels,
+                height=650,
+                physics=physics,
+                show_labels=show_labels,
+                min_label_degree=min_label_degree,
+            )
         else:
-            render_pyvis(nodes, rels, height=650, physics=physics, hierarchical=hierarchical)
+            render_pyvis(
+                nodes,
+                rels,
+                height=650,
+                physics=physics,
+                hierarchical=hierarchical,
+                show_labels=show_labels,
+                min_label_degree=min_label_degree,
+            )
+# --------------------------- Footer (sidebar) ---------------------------
 
     st.sidebar.divider()
     st.sidebar.markdown(
