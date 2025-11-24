@@ -835,7 +835,7 @@ with tab_visual:
             <a href="https://github.com/asmaa-a-abdelwahab" target="_blank" style="text-decoration: none;">
                 <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub Logo" style="width:40px; height:40px; margin-right: 10px;">
             </a>
-            <a href="https://github.com/asmaa-a-abdelwahab" target="_blank" style="text-decoration: none;">
+            <a href="https://github.com/asmaa-a-abdelwahab/ChemGraphBuilder-Demo" target="_blank" style="text-decoration: none;">
                 <p style="font-size: 16px; font-weight: bold; color: black; margin: 0;">@asmaa-a-abdelwahab</p>
             </a>
         </div>
