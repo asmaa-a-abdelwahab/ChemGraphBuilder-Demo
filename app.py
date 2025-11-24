@@ -731,11 +731,12 @@ with tab_workbench:
         preset = st.selectbox(
             "Preset",
             [
-                # 0 – basic node listing
-                "MATCH (n) RETURN n LIMIT $limit",
-
-                # 1 – basic edge listing
-                "MATCH (n)-[r]->(m) RETURN n,r,m LIMIT $limit",
+                # 1 – sample graph
+                """MATCH (n)-[r]->(m)
+                WITH n, r, m, rand() AS rrand
+                RETURN n, r, m
+                ORDER BY rrand
+                LIMIT 100;""",
 
                 # 2 – count nodes per label
                 """MATCH (n)
@@ -747,12 +748,6 @@ with tab_workbench:
                 """MATCH ()-[r]->()
                 RETURN type(r) AS relationshipType, count(*) AS count
                 ORDER BY count DESC""",
-
-                # 4 – list labels
-                "CALL db.labels() YIELD label RETURN label LIMIT $limit",
-
-                # 5 – list relationship types
-                "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType LIMIT $limit",
             ],
             index=1,
         )
