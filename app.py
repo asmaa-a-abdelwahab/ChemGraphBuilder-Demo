@@ -44,7 +44,7 @@ _ENV_SECRET_KEYS = re.compile(r"(PASS(WORD)?|TOKEN|API[_-]?KEY|SECRET)", re.I)
 _URI_CRED_RE = re.compile(r"(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<user>[^:/@]+):(?P<pw>[^@]+)@")
 
 # --------------------------- Config helpers ---------------------------
-def _parse_enzyme_list(s: str) -> list[str]:
+def _parse_Gene_list(s: str) -> list[str]:
     # normalize: split comma/whitespace, uppercase, keep CYP-like tokens
     toks = [t.strip().upper() for t in re.split(r"[,\s]+", s or "") if t.strip()]
     # Very light validation; keep alnum/_/-
@@ -360,7 +360,7 @@ with st.sidebar:
     default_user = "neo4j"
     default_db   = "neo4j"
     default_pwd  = ""
-    default_enz  = st.secrets.get("ENZYMES")
+    default_enz  = st.secrets.get("GeneS")
 
     if source == "Use st.secrets":
         uri_input  = st.secrets.get("NEO4J_URI")
@@ -375,7 +375,7 @@ with st.sidebar:
         pwd_input  = st.text_input("Password / Token", type="password", value=default_pwd)
         db_input   = st.text_input("Database", value=default_db)
         enz_input  = st.text_input(
-            "Enzyme list (comma-separated)",
+            "Gene list (comma-separated)",
             help="Example: CYP2J2,CYP2C9,CYP3A4",
         )
 
@@ -687,25 +687,25 @@ def render_pyvis(
 
     
 # --------------------------- Pipeline commands ---------------------------
-def commands_for_run(neo4j_uri: str, neo4j_password: str, enzymes: list[str] | str = None) -> List[List[str]]:
+def commands_for_run(neo4j_uri: str, neo4j_password: str, Genes: list[str] | str = None) -> List[List[str]]:
     """
-    Build a runnable command list for the provided enzyme symbols.
-    `enzymes` can be a list like ["CYP4X1","CYP4Z1"] or a comma-separated string.
+    Build a runnable command list for the provided Gene symbols.
+    `Genes` can be a list like ["CYP4X1","CYP4Z1"] or a comma-separated string.
     """
-    # enzymes = enzymes or []
-    # if isinstance(enzymes, str):
-    #     enzymes = [t.strip() for t in enzymes.split(",") if t.strip()]
-    # enzymes = ",".join(enzymes)
+    # Genes = Genes or []
+    # if isinstance(Genes, str):
+    #     Genes = [t.strip() for t in Genes.split(",") if t.strip()]
+    # Genes = ",".join(Genes)
 
     u = neo4j_uri
     pw = neo4j_password
 
     core = [
         "setup-data-folder",
-        f"collect-process-nodes --node_type Compound --enzyme_list {enzymes} --start_chunk 0",
-        f"collect-process-nodes --node_type BioAssay --enzyme_list {enzymes} --start_chunk 0",
-        f"collect-process-nodes --node_type Gene --enzyme_list {enzymes} --start_chunk 0",
-        f"collect-process-nodes --node_type Protein --enzyme_list {enzymes} --start_chunk 0",
+        f"collect-process-nodes --node_type Compound --enzyme_list {Genes} --start_chunk 0",
+        f"collect-process-nodes --node_type BioAssay --enzyme_list {Genes} --start_chunk 0",
+        f"collect-process-nodes --node_type Gene --enzyme_list {Genes} --start_chunk 0",
+        f"collect-process-nodes --node_type Protein --enzyme_list {Genes} --start_chunk 0",
         "collect-process-relationships --relationship_type Assay_Compound --start_chunk 0",
         "collect-process-relationships --relationship_type Assay_Gene --start_chunk 0",
         "collect-process-relationships --relationship_type Gene_Protein --start_chunk 0",
@@ -766,7 +766,7 @@ def run_pipeline(commands: list[list[str]], extra_env: dict[str, str] | None = N
     total = len(commands)
     logs: list[dict] = []
 
-    enz_label = env.get("ENZYMES", "example")
+    enz_label = env.get("GeneS", "example")
     st.write(f"**Starting {enz_label} loader…**")
     
     for i, argv in enumerate(commands, start=1):
@@ -832,7 +832,7 @@ tab_loader, tab_workbench, tab_visual = st.tabs(
 )
 
 with tab_loader:
-    st.subheader("Create Database — Use Your Enzymes or the Example")
+    st.subheader("Use Your Gene List or the Provided Examples")
 
     colA, colB = st.columns([2, 2])
     with colA:
@@ -847,7 +847,7 @@ with tab_loader:
     mode = st.radio(
         "Run mode",
         [
-            "Build from my enzyme list (select Enter manually in the sidebar)",
+            "Build from my Gene list (select Enter manually in the sidebar)",
             "Run Small example (CYP4Z1)",
             "Run Larger example (CYP2U1)",
         ],
@@ -867,23 +867,23 @@ with tab_loader:
             st.error("Provide Aura URI/password in the sidebar (or via st.secrets).")
         else:
             try:
-                # -------- choose enzymes based on mode --------
-                if mode.startswith("Build from my enzyme list"):
-                    enz_list = _parse_enzyme_list(st.session_state.get("enz_list") or "")
+                # -------- choose Genes based on mode --------
+                if mode.startswith("Build from my Gene list"):
+                    enz_list = _parse_Gene_list(st.session_state.get("enz_list") or "")
                     if not enz_list:
-                        st.error("Your enzyme list is empty or invalid.")
+                        st.error("Your Gene list is empty or invalid.")
                         st.stop()
-                    enzymes_str = ",".join(enz_list)
+                    Genes_str = ",".join(enz_list)
                 elif "Small example" in mode:
-                    enzymes_str = "CYP4Z1"
+                    Genes_str = "CYP4Z1"
                 else:  # "Run Larger example (CYP2U1)"
-                    enzymes_str = "CYP2U1"
+                    Genes_str = "CYP2U1"
 
-                # use chosen enzymes here
+                # use chosen Genes here
                 cmds = commands_for_run(
                     neo4j_uri=uri,
                     neo4j_password=password,
-                    enzymes=enzymes_str,
+                    Genes=Genes_str,
                 )
 
                 if wipe_first and driver:
@@ -906,7 +906,7 @@ with tab_loader:
                     "NEO4J_PASSWORD": password,
                     "NEO4J_USER": user or "neo4j",
                     "NEO4J_DATABASE": database,
-                    "ENZYMES": enzymes_str,   # <— use chosen enzymes here too
+                    "GeneS": Genes_str,   # <— use chosen Genes here too
                 }
 
                 logs = run_pipeline(cmds, extra_env=env, cwd=".")
