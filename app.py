@@ -925,8 +925,7 @@ with tab_workbench:
                 """MATCH (n)-[r]->(m)
                 WITH n, r, m, rand() AS rrand
                 RETURN n, r, m
-                ORDER BY rrand
-                LIMIT 100;""",
+                ORDER BY rrand;""",
 
                 # 2 – count nodes per label
                 """MATCH (n)
