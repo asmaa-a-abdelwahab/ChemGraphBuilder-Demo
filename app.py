@@ -293,14 +293,6 @@ st.markdown(
         margin-top: 0.25rem;
     }
 
-    /* Sidebar buttons (only in sidebar) */
-    [data-testid="stSidebar"] .stButton > button {
-        width: 100%;
-        border-radius: 999px;
-        font-weight: 600;
-        padding: 0.45rem 0.75rem;
-    }
-
     /* Footer */
     .sidebar-footer {
         font-size: 0.75rem;
