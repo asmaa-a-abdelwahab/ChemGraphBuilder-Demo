@@ -70,7 +70,6 @@ def redact_text(s: str) -> str:
 def redact_argv(argv: list[str]) -> str:
     """Return a printable (masked) version of argv."""
     masked: list[str] = []
-    it = iter(range(len(argv)))
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -190,34 +189,125 @@ def to_csv(rows: List[Dict[str, Any]], header: List[str]) -> str:
 
 
 # --------------------------- Page setup ---------------------------
-st.set_page_config(page_title="Build Neo4J Graph using ChemGraphBuilder", layout="wide")
+st.set_page_config(
+    page_title="Build Neo4J Graph using ChemGraphBuilder",
+    layout="wide",
+    page_icon="images/kg_icon.webp",
+)
 st.title("Build Neo4J Graph using ChemGraphBuilder")
+
+# ---- Global layout + tabs styling (keep this if you already have it) ----
+st.markdown(
+    """
+    <style>
+    /* Main area padding */
+    .main .block-container {
+        padding-top: 0.75rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+
+    /* Sidebar background + padding */
+    [data-testid="stSidebar"] {
+        background-color: #f3f4f6;             /* light grey */
+        padding-top: 0.75rem;
+    }
+
+    [data-testid="stSidebar"] > div:first-child {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+
+    /* Card-like sections inside sidebar */
+    .sidebar-section {
+        background-color: #ffffff;
+        border-radius: 0.75rem;
+        padding: 1rem 1.1rem 1.25rem;
+        box-shadow: 0 1px 3px rgba(15,23,42,0.06);
+        border: 1px solid #e5e7eb;
+        margin-bottom: 1rem;
+    }
+
+    .sidebar-header-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .sidebar-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .sidebar-subtitle {
+        font-size: 0.9rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+
+    /* Sidebar buttons (only in sidebar) */
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100%;
+        border-radius: 999px;
+        font-weight: 600;
+        padding: 0.45rem 0.75rem;
+    }
+
+    /* Footer */
+    .sidebar-footer {
+        font-size: 0.75rem;
+        color: #6b7280;
+        text-align: center;
+        margin-top: 0.75rem;
+    }
+    .sidebar-footer .gh-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-top: 0.4rem;
+        color: #111827;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .sidebar-footer img {
+        width: 20px;
+        height: 20px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 # --------------------------- Connection (sidebar) ---------------------------
 file_ = open("images/kg_icon.webp", "rb").read()
 base64_image = base64.b64encode(file_).decode("utf-8")
-st.sidebar.markdown(
-    f"""
-    <div style="display: flex; align-items: center; justify-content: center; padding-bottom: 10px;">
-        <!-- Logo -->
-        <div style="display: flex; align-items: center; margin-right: 10px;">
-            <img src="data:image/png;base64,{base64_image}" alt="Logo" width="100" style="border-radius: 5px;">
-        </div>
-        <!-- Separator -->
-        <div style="width: 4px; height: 50px; background-color: #ccc; margin-right: 10px;"></div>
-        <!-- Text -->
-        <div style="font-size: 20px; font-weight: bold; color: #112f5f;">
-            ChemGraphBuilder
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-st.sidebar.divider()
-st.sidebar.write("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
-# --------------------------- Connection (sidebar) ---------------------------
+
 with st.sidebar:
-    st.subheader("Provide Neo4j Aura Credentials")
+    # --- Logo / app name card ---
+    st.markdown(
+        f"""
+        <div class="sidebar-section">
+            <div class="sidebar-header-row">
+                <img src="data:image/png;base64,{base64_image}"
+                     alt="Logo" width="52" style="border-radius: 8px;">
+                <div>
+                    <div class="sidebar-title">ChemGraphBuilder</div>
+                    <div class="sidebar-subtitle">
+                        Build, query, and visualize knowledge graphs for Chemical-Gene interactions
+                    </div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # --- Credentials card ---
+    # st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.header("Neo4j Aura Credentials", anchor=False)
 
     source = st.radio(
         "Credential source",
@@ -246,7 +336,10 @@ with st.sidebar:
         user_input = st.text_input("Username", value=default_user)
         pwd_input  = st.text_input("Password / Token", type="password", value=default_pwd)
         db_input   = st.text_input("Database", value=default_db)
-        enz_input  = st.text_input("Enzyme list (comma-separated)", help="Example: CYP2J2,CYP2C9,CYP3A4")
+        enz_input  = st.text_input(
+            "Enzyme list (comma-separated)",
+            help="Example: CYP2J2,CYP2C9,CYP3A4",
+        )
 
     # Store in session for reuse everywhere
     st.session_state["conn_uri"]  = uri_input
@@ -255,7 +348,24 @@ with st.sidebar:
     st.session_state["conn_db"]   = db_input
     st.session_state["enz_list"]  = enz_input
 
-    connect_btn = st.button("Connect / Reconnect", type="primary", use_container_width=True)
+    connect_btn = st.button("Connect / Reconnect", type="primary")
+    st.markdown("</div>", unsafe_allow_html=True)  # close sidebar-section
+
+    # --- Footer (always pinned at bottom visually) ---
+    st.markdown("---", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="sidebar-footer">
+            © 2025 Asmaa A. Abdelwahab<br/>
+            <a class="gh-link" href="https://github.com/asmaa-a-abdelwahab/ChemGraphBuilder-Demo" target="_blank">
+                <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                     alt="GitHub">
+                <span>@asmaa-a-abdelwahab</span>
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 @st.cache_resource(show_spinner=False)
 def get_driver(uri_: str, user_: str, pw_: str):
@@ -338,7 +448,7 @@ def extract_graph(records: Iterable[dict]) -> Tuple[List[Node], List[Relationshi
 def render_pyvis(
     nodes: List[Node],
     rels: List[Relationship],
-    height: int = 650,
+    height: int = 700,
     physics: bool = True,
     hierarchical: bool = False,
     show_labels: bool = True,
@@ -417,21 +527,25 @@ def render_pyvis(
         labels = ":".join(list(n.labels))
         props = dict(n.items())
 
-        # Tooltip (rich info)
-        title = "<br>".join(
-            [f"<b>{labels}</b>"]
-            + [f"<b>{k}</b>: {v}" for k, v in props.items()]
-        )
+        # Neat multi-line tooltip for nodes
+        title_lines = [f"Type: {labels}"]
+        for k, v in props.items():
+            title_lines.append(f"{k}: {v}")
+        title = "\n".join(title_lines)
 
-        # Label text – optional + only for higher-degree nodes
-        base_label = props.get("name") or props.get("title") or props.get("id") or labels or nid
+        base_label = (
+            props.get("name")
+            or props.get("title")
+            or props.get("id")
+            or labels
+            or nid
+        )
         if show_labels and deg.get(nid, 0) >= min_label_degree:
             label_text = str(base_label)
         else:
-            label_text = ""  # no text on the node, just tooltip
+            label_text = ""
 
-        # Size based on degree (but modest)
-        size = 5 + min(30, deg.get(nid, 0) * 1.5)
+        size = 35 + min(30, deg.get(nid, 0) * 1.5)
 
         net.add_node(
             nid,
@@ -441,13 +555,97 @@ def render_pyvis(
             color=_node_color(n),
         )
 
+    # Add edge tooltips
     for r in rels:
         sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
-        tid = getattr(r.end_node, "element_id", None) or str(getattr(r.end_node, "id", None))
-        # Edge labels can be noisy; keep them but small (font options above)
-        net.add_edge(sid, tid, label=r.type)
+        tid = getattr(r.end_node,   "element_id", None) or str(getattr(r.end_node,   "id", None))
+        props = dict(r.items())
+        edge_lines = [f"Relationship: {r.type}"]
+        for k, v in props.items():
+            edge_lines.append(f"{k}: {v}")
+        edge_title = "\n".join(edge_lines)
+        net.add_edge(sid, tid, label=r.type, title=edge_title)
 
-    components.html(net.generate_html(), height=height, scrolling=True)
+    # ---- Generate HTML and inject tooltip styling + legend ----
+    html = net.generate_html()
+
+    tooltip_and_legend_css = """
+    <style>
+    /* Tooltips: respect \\n and match app styling */
+    div.vis-tooltip {
+        white-space: pre-line;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 11px;
+        line-height: 1.4;
+        padding: 6px 8px;
+        border-radius: 4px;
+        border: 1px solid #d1d5db;
+        background-color: #ffffff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+        max-width: 420px;
+    }
+
+    /* Legend container overlay */
+    #kg-legend {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 10;
+        background: #ffffff;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 12px;
+    }
+
+    #kg-legend h4 {
+        margin: 0 0 6px 0;
+        font-size: 12px;
+        font-weight: 600;
+        text-align: left;
+    }
+
+    #kg-legend ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    #kg-legend li {
+        display: flex;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+
+    #kg-legend .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        margin-right: 6px;
+    }
+    </style>
+    """
+
+    # Build legend HTML using LABEL_COLOR
+    legend_html = f"""
+    <div id="kg-legend">
+        <h4>Node Legend</h4>
+        <ul>
+            <li><span class="legend-dot" style="background:{LABEL_COLOR.get('Compound', '#4C78A8')}"></span>Compound</li>
+            <li><span class="legend-dot" style="background:{LABEL_COLOR.get('Gene', '#54A24B')}"></span>Gene</li>
+            <li><span class="legend-dot" style="background:{LABEL_COLOR.get('BioAssay', '#F58518')}"></span>BioAssay</li>
+            <li><span class="legend-dot" style="background:{LABEL_COLOR.get('Protein', '#E45756')}"></span>Protein</li>
+        </ul>
+    </div>
+    """
+
+    # Inject CSS into <head> and legend into <body>
+    html = html.replace("</head>", tooltip_and_legend_css + "</head>")
+    html = html.replace("<body>", "<body>" + legend_html)
+
+    components.html(html, height=height, scrolling=True)
 
     
 # --------------------------- Pipeline commands ---------------------------
@@ -763,11 +961,10 @@ with tab_visual:
         with v1:
             physics = st.toggle("Enable Graph Physics", True)
         with v2:
-            hierarchical = st.toggle("Hierarchical layout", False)
+            show_labels = st.checkbox("Show node labels", value=True)
         with v3:
             edge_cap = st.slider("Edge cap", 100, 5000, 2000, 100)
 
-        show_labels = st.checkbox("Show node labels", value=True)
         min_label_degree = st.slider(
             "Min degree for showing label", 0, 10, 1, 1,
             help="Increase to show labels only for better-connected nodes."
@@ -781,6 +978,22 @@ with tab_visual:
         nodes_csv = to_csv(node_rows, node_header)
         rels_csv  = to_csv(rel_rows, rel_header)
 
+        # Limit edges for performance
+        if len(rels) > edge_cap:
+            rels = rels[:edge_cap]
+        st.caption(f"Rendering {len(nodes)} nodes / {len(rels)} relationships (PyVis)")
+
+        # Single renderer: PyVis
+        render_pyvis(
+            nodes,
+            rels,
+            height=650,
+            physics=physics,
+            show_labels=show_labels,
+            min_label_degree=min_label_degree,
+        )
+        st.markdown("---")
+        # st.caption("⬇️ Download CSVs")
         dlc1, dlc2 = st.columns(2)
         with dlc1:
             st.download_button(
@@ -798,47 +1011,3 @@ with tab_visual:
                 mime="text/csv",
                 use_container_width=True,
             )
-
-        # Limit edges for performance
-        if len(rels) > edge_cap:
-            rels = rels[:edge_cap]
-        st.caption(f"Rendering {len(nodes)} nodes / {len(rels)} relationships (PyVis)")
-
-        # Single renderer: PyVis
-        render_pyvis(
-            nodes,
-            rels,
-            height=650,
-            physics=physics,
-            hierarchical=hierarchical,
-            show_labels=show_labels,
-            min_label_degree=min_label_degree,
-        )
-
-# --------------------------- Footer (sidebar) ---------------------------
-
-    st.sidebar.divider()
-    st.sidebar.markdown(
-        """
-        <br>
-        <div style="text-align: center;">
-            <p style="font-size: 12px; color: gray;">
-                © 2025 Asmaa A. Abdelwahab
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.sidebar.markdown(
-        """
-        <div style="display: flex; align-items: center; justify-content: center;">
-            <a href="https://github.com/asmaa-a-abdelwahab" target="_blank" style="text-decoration: none;">
-                <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub Logo" style="width:40px; height:40px; margin-right: 10px;">
-            </a>
-            <a href="https://github.com/asmaa-a-abdelwahab/ChemGraphBuilder-Demo" target="_blank" style="text-decoration: none;">
-                <p style="font-size: 16px; font-weight: bold; color: black; margin: 0;">@asmaa-a-abdelwahab</p>
-            </a>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
