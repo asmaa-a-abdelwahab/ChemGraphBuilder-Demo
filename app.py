@@ -14,7 +14,6 @@ from neo4j.graph import Node, Relationship
 
 from pyvis.network import Network
 import streamlit.components.v1 as components
-from streamlit_agraph import agraph, Node as ANode, Edge as AEdge, Config as AConfig
 from pathlib import Path
 import csv as csv_mod
 from io import StringIO
@@ -451,67 +450,6 @@ def render_pyvis(
     components.html(net.generate_html(), height=height, scrolling=True)
 
     
-def render_agraph(
-    nodes: List[Node],
-    rels: List[Relationship],
-    height: int = 650,
-    physics: bool = True,
-    show_labels: bool = True,
-    min_label_degree: int = 1,
-):
-    a_nodes: List[ANode] = []
-    a_edges: List[AEdge] = []
-
-    deg = defaultdict(int)
-    for r in rels:
-        sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
-        tid = getattr(r.end_node, "element_id", None) or str(getattr(r.end_node, "id", None))
-        deg[sid] += 1
-        deg[tid] += 1
-
-    seen: Set[str] = set()
-    for n in nodes:
-        nid = getattr(n, "element_id", None) or str(getattr(n, "id", None))
-        if not nid or nid in seen:
-            continue
-        seen.add(nid)
-
-        labels = ":".join(list(n.labels))
-        props = dict(n.items())
-
-        base_label = props.get("name") or props.get("title") or props.get("id") or labels or nid
-        if show_labels and deg.get(nid, 0) >= min_label_degree:
-            label_text = str(base_label)
-        else:
-            label_text = ""
-
-        size = 10 + min(25, deg.get(nid, 0) * 1.5)
-
-        a_nodes.append(
-            ANode(
-                id=nid,
-                label=label_text,
-                title=f"{labels}\n{json.dumps(props, ensure_ascii=False)}",
-                size=size,
-                color=_node_color(n),
-            )
-        )
-
-    for r in rels:
-        sid = getattr(r.start_node, "element_id", None) or str(getattr(r.start_node, "id", None))
-        tid = getattr(r.end_node, "element_id", None) or str(getattr(r.end_node, "id", None))
-        a_edges.append(AEdge(source=sid, target=tid, label=r.type))
-
-    cfg = AConfig(
-        height=height,
-        width="100%",
-        directed=True,
-        physics=physics,
-        hierarchical=False,
-    )
-    agraph(nodes=a_nodes, edges=a_edges, config=cfg)
-
-
 # --------------------------- Pipeline commands ---------------------------
 def commands_for_run(neo4j_uri: str, neo4j_password: str, enzymes: list[str] | str = None) -> List[List[str]]:
     """
@@ -821,23 +759,22 @@ with tab_visual:
     if not rows:
         st.info("Run a query (or fetch a subgraph) first.")
     else:
-        v1, v2, v3, v4 = st.columns([1,1,1,1])
-        with v1: 
-            renderer = st.selectbox("Renderer", ["Agraph (fast)", "PyVis (rich)"], index=0)
-        with v2: 
+        v1, v2, v3 = st.columns([1, 1, 1])
+        with v1:
             physics = st.toggle("Enable Graph Physics", True)
-        with v3: 
-            hierarchical = st.toggle("Hierarchical (PyVis only)", False)
-        with v4: 
+        with v2:
+            hierarchical = st.toggle("Hierarchical layout", False)
+        with v3:
             edge_cap = st.slider("Edge cap", 100, 5000, 2000, 100)
-
 
         show_labels = st.checkbox("Show node labels", value=True)
         min_label_degree = st.slider(
             "Min degree for showing label", 0, 10, 1, 1,
             help="Increase to show labels only for better-connected nodes."
         )
+
         nodes, rels = extract_graph(rows)
+
         # Build CSVs for downloads
         node_rows, node_header = nodes_to_table(nodes)
         rel_rows, rel_header   = rels_to_table(rels)
@@ -861,29 +798,23 @@ with tab_visual:
                 mime="text/csv",
                 use_container_width=True,
             )
-        if len(rels) > edge_cap: 
-            rels = rels[:edge_cap]
-        st.caption(f"Rendering {len(nodes)} nodes / {len(rels)} relationships")
 
-        if renderer.startswith("Agraph"):
-            render_agraph(
-                nodes,
-                rels,
-                height=650,
-                physics=physics,
-                show_labels=show_labels,
-                min_label_degree=min_label_degree,
-            )
-        else:
-            render_pyvis(
-                nodes,
-                rels,
-                height=650,
-                physics=physics,
-                hierarchical=hierarchical,
-                show_labels=show_labels,
-                min_label_degree=min_label_degree,
-            )
+        # Limit edges for performance
+        if len(rels) > edge_cap:
+            rels = rels[:edge_cap]
+        st.caption(f"Rendering {len(nodes)} nodes / {len(rels)} relationships (PyVis)")
+
+        # Single renderer: PyVis
+        render_pyvis(
+            nodes,
+            rels,
+            height=650,
+            physics=physics,
+            hierarchical=hierarchical,
+            show_labels=show_labels,
+            min_label_degree=min_label_degree,
+        )
+
 # --------------------------- Footer (sidebar) ---------------------------
 
     st.sidebar.divider()
